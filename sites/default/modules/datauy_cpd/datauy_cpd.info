@@ -1,0 +1,4 @@
+name = DataUY CPD General
+description = Customizaciones desarrolladas por DATA para CPD MIDES
+core = 7.x
+package = "DATA modules"

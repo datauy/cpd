@@ -1,0 +1,925 @@
+<?php
+
+/*
+HOOKS
+*/
+function datauy_cpd_menu(){
+  $items['test'] = array(
+    'title' => t('Test Page'),
+    'description' => t('Test'),
+    'access callback' => TRUE,
+    'page callback' => 'datauy_cpd_test',
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['trivia'] = array(
+    'title' => t('Trivia CPD!'),
+    'description' => t('Trivia, multiform'),
+    'access callback' => TRUE,
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('datauy_cpd_trivia_form'),
+    'type' => MENU_CALLBACK,
+  );
+
+  $items['admin/cpd'] = array(
+    'title' => 'Configure CPD Site',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('datauy_cpd_admin'),
+    'access arguments' => array('cpd configure'),
+    'file' => 'datauy_cpd.admin.inc',
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  return $items;
+}
+/**
+ * Implements hook_permission().
+ */
+function datauy_cpd_permission(){
+	return array('cpd configure' => array('title' => 'Configure CPD'));
+}
+
+/**
+ * Implements hook_theme().
+ */
+function datauy_cpd_theme() {
+  return array(
+    'trivia-completed-email' => array(
+      'template' => 'templates/datauy_cpd_trivia_completed_email',
+      'variables' => array( 'data2show' => NULL ),
+    ),
+    'test' => array(
+      'template' => 'templates/test',
+      'variables' => array( 'data2show' => NULL ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_mail().
+ */
+function datauy_cpd_mail($key, &$message, $params) {
+  $message['headers']['Content-Type'] = 'text/html; charset=UTF-8; ; format=flowed;';
+  switch ($key)
+  {
+      case 'test':
+        $body = $params['body'];
+        $message['subject'] = t('Test requested');
+        break;
+  }
+  $message['body'][] = $body;
+}
+
+/**
+* Contact form for rooms
+*/
+function datauy_cpd_trivia_form($form, &$form_state){
+  if(isset($_SESSION["datauy_cpd"]["#user_name"])&& !isset($form_state['stage'])){
+    //Está iniciando una trivia y ya jugó otra donde puso usuario y centro
+    //Cargo selector de eje temático
+      $form_state['stage'] = 1;
+      datauy_cpd_set_session_data_into_form_data($form_state);
+      $form['stage_type']= array(
+        '#type' => 'item',
+        '#markup' => "selector_eje_tematico",
+      );
+
+      $form['selector_title'] = array(
+        '#type' => 'item',
+        '#markup' => "<h3>Selecciona un eje temático</h3>",
+      );
+      $vocabulary = taxonomy_vocabulary_machine_name_load('ejes_tematicos');
+      $ejes = entity_load('taxonomy_term', FALSE, array('vid' => $vocabulary->vid));
+      foreach ($ejes as $eje) {
+       $selector_name = "selector" . $eje->name;
+       $form[$selector_name] = array(
+          '#type' => 'item',
+          '#markup' => "<div onclick='select_component(\"".$eje->tid."\")' class='component_selector_box'>".$eje->name."</div>",
+        );
+      }
+      $form['form_eje_tematico'] = array(
+        "#type" => "hidden",
+      );
+      $form['next'] = array(
+        '#type' => 'submit',
+        '#value' => t('Next'),
+        '#attributes' => array('class' => array('button')),
+      );
+      drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/component_selector.js');
+  }else if (!isset($form_state['stage'])) {
+    //Inicio de trivia. Ingresa nombre y centro
+    $form_state['stage'] = 0;
+    $form['stage_type']= array(
+      '#type' => 'item',
+      '#markup' => "register_form",
+    );
+
+    $form['name'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Your name'),
+      '#theme_wrappers' => array(),
+      '#size' => 0,
+    );
+
+    $form['center'] = array(
+      '#type' => 'select',
+      '#title' => t('Educational Center'),
+      '#options' => datauy_cpd_centros_options(),
+      '#attributes' => array('class' => array('style-select')),
+      '#theme_wrappers' => array(),
+    );
+    $form['center']['0']['#disabled'] = TRUE;
+    $form['specify_center'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Specify center'),
+      '#attributes' => array('class' => array('specify_center')),
+      '#theme_wrappers' => array(),
+      '#size' => 0,
+    );
+    $base_url = "sites/default/themes/cpd";
+
+    $form['next'] = array(
+      '#type' => 'submit',
+      '#value' => t('Next'),
+      '#attributes' => array('class' => array('button')),
+    );
+    $form['next_anonymus'] = array(
+      '#type' => 'submit',
+      '#value' => t('No, gracias. Jugar ya'),
+      '#attributes' => array('class' => array('btn_secundary')),
+    );
+    drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/trivia_start.js');
+  }
+  else {
+    if($form_state['stage']==1){
+      //Selector de eje temático
+      $form['stage_type']= array(
+        '#type' => 'item',
+        '#markup' => "selector_eje_tematico",
+      );
+
+      $form['selector_title'] = array(
+        '#type' => 'item',
+        '#markup' => "<h3>Selecciona un eje temático</h3>",
+      );
+      $vocabulary = taxonomy_vocabulary_machine_name_load('ejes_tematicos');
+      $ejes = entity_load('taxonomy_term', FALSE, array('vid' => $vocabulary->vid));
+      foreach ($ejes as $eje) {
+       $selector_name = "selector" . $eje->name;
+       $form[$selector_name] = array(
+          '#type' => 'item',
+          '#markup' => "<div onclick='select_component(\"".$eje->tid."\")' class='component_selector_box'>".$eje->name."</div>",
+        );
+      }
+      $form['form_eje_tematico'] = array(
+        "#type" => "hidden",
+      );
+      drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/component_selector.js');
+    }else{
+      //ESTAMOS JUGANDO
+      //Restamos las etapas del comienzo
+      $stage = $form_state['stage'] - 2;
+      if(isset($form_state['just_played_game'])){
+        //RECIEN TERMINO UN JUEGO, debo mostrar el texto del juego "Tiene derecho a..."
+        $form['stage_type']= array(
+          '#type' => 'item',
+          '#markup' => "game_result_page",
+        );
+        $form_stage = 'stage_'.$stage.'_message';
+        $form['game_result'] = array(
+          '#type' => 'item',
+          '#markup' => "<div id='game_result'>".$form_state['game_result']."</div>",
+        );
+        $message = $form_state['game_node']->field_texto_resultado_final['und'][0]['safe_value'];
+        $form['game_message'] = array(
+          '#type' => 'item',
+          //'#markup' => "<div id='game_message'>".$message."</div>",
+          '#markup' => $message,
+        );
+      }else{
+        if(isset($form_state['show_final_page'])){
+          //Terminó todos los juegos y mostró todos los mensajes. Ahora muestro página final de la trivia con links al aprendé y compartí
+          $form['stage_type']= array(
+            '#type' => 'item',
+            '#markup' => "trivia_end_page",
+            '#username' => $form_state['user_name'],
+          );
+          $form['trivia_end_message'] = array(
+            '#type' => 'item',
+            '#markup' => "<div id='trivia_end_message'>"."Trivia finalizada con éxito"."</div>",
+          );
+          $trivia_links = datauy_cpd_get_trivia_end_links($form_state['trivia']);
+          $form['trivia_links'] = array(
+            '#type' => 'item',
+            '#markup' => "<div id='trivia_links'><h3>Aprendé y compartí sobre los derechos relacionados a esta trivia: </h3>".$trivia_links."</div>",
+          );
+        }else{
+          //Está comenzando un juego nuevo
+          $form['page_number'] = array(
+            '#type' => 'item',
+            //'#markup' => t('Pregunta') . " " . ($stage+1) . "/" . sizeof($form_state['trivia']['juegos']),
+            '#markup' => ($stage+1) . "/" . sizeof($form_state['trivia']['juegos']),
+          );
+          $form_state['game_node'] = node_load($form_state['trivia']['juegos'][$stage]);
+          $form['stage_type']= array(
+            '#type' => 'item',
+            '#markup' => $form_state['game_node']->type,
+          );
+          $form_stage = 'stage_'.$stage.'_response';
+          $form[$form_stage] = datauy_cpd_get_game_form($form_state['game_node'],$stage);
+          $form["game_elements"] = $form[$form_stage];
+        }
+      }
+    }
+    //ESTE CONTROL ES PARA PONER "TERMINAR" EN LA ULTIMA PAGINA
+    if(isset($form_state['show_final_page'])){
+      $form['next'] = array(
+        '#type' => 'submit',
+        '#value' => t('Finish'),
+      );
+    }else{
+      $form['next'] = array(
+        '#type' => 'submit',
+        '#value' => t('Next'),
+        '#attributes' => array('class' => array('button')),
+      );
+    }
+
+  }
+
+  return $form;
+}
+
+function datauy_cpd_set_session_data_into_form_data(&$form_state){
+  //Es la primer formulario donde ponen el nombre o anónimo
+  if(isset($_SESSION['datauy_cpd'])){
+    $form_state['values']['name'] = $_SESSION['datauy_cpd']['#user_name'];
+    $anonymus = datauy_cpd_is_anonymus($form_state);
+    if($anonymus==0){
+      $form_state['user_name'] = $form_state['values']['name'];
+    }else{
+      $form_state['user_name'] = "usuario anónimo";
+    }
+    $form_state['values']['center'] = $_SESSION['datauy_cpd']['#center'];
+    $form_state['center'] = $form_state['values']['center'];
+    if(isset($_SESSION['datauy_cpd']['#specify_center'])){
+      $form_state['values']['specify_center'] = $_SESSION['datauy_cpd']['#specify_center'];
+      $form_state['specify_center'] = $form_state['values']['specify_center'];
+    }else{
+      $form_state['specify_center'] = null;
+    }
+  }
+}
+
+function datauy_cpd_trivia_form_validate($form, &$form_state){
+  if ( $form_state['stage'] == 0 && !datauy_cpd_is_anonymus($form_state) && $form_state['values']['name']==""){
+    //&& !$form_state['values']['center']
+    form_set_error('name', t('Please enter your name.'));
+  }
+    //form_set_error('center', t('Your must select a center.'));
+    //if (sizeof(explode(' ', $form_state['values']['name']) < 2))
+    //form_set_error('name', t('Please enter your complete name.'));
+}
+
+function datauy_cpd_trivia_form_submit($form, &$form_state){
+
+  if ($form_state['stage']){
+    if($form_state['stage']>1){
+      if(isset($form_state['just_played_game'])){
+        //Acabo de mostrar el mensaje con el resultado del juego.
+        //No hago nada, solo des-seteo la variable para que sume al stage y pase de juego
+        unset($form_state['just_played_game']);
+        //Hay que contrastar contra el tamaño del array de juegos
+        //El primer juego es stage=2 pero para comparar con la cantidad de juegos debería ser stage=1 por eso el "-1" en la siguiente comparación
+        if ( $form_state['stage']-1 == sizeof($form_state['trivia']['juegos']) ){
+          //Era el último juego. Ya lo respondió y ya mostró mensaje. Ahora hay que mostrar la página final de la trivia.
+          $form_state['show_final_page'] = true;
+          $form_state['trivia_contestada'] = updateTriviaCountResponses($form_state,true);
+        }
+      }else{
+        if(isset($form_state['show_final_page'])){
+          //Ya mostré la última página de la trivia. Mando mail y vuelvo a la home
+          //Send admin mail
+          $mail_data['body'] = theme( 'trivia-completed-email', array('data2show' => $form_state['multistep_values']) );
+          drupal_mail('datauy_cpd', 'test', 'pablo.pignolo@gmail.com, fernandouval@gmail.com, '.variable_get('site_mail', ''), 'es', $mail_data, NULL, TRUE);
+          drupal_set_message(t('Email sended'));
+          drupal_goto('/');
+          watchdog('datauy_cpd', '<pre>SUBMIT FORM email: '.print_r($form_state['multistep_values'], TRUE).'</pre>', array() );
+        }else{
+          //YA ESTOY JUGANDO
+          //Guardo nodo del juego si no se guardo
+          $form_state['just_played_game'] = true;
+          $game_result = datauy_cpd_get_game_result($form_state);
+          if($game_result==1){
+            $form_state['game_result'] = "¡Muy bien!";
+          }else if($game_result==0){
+            $form_state['game_result'] = "Miralo desde otro lado...";
+          }else if($game_result==-1){
+            $form_state['game_result'] = "No has respondido...";
+          }
+          $played_game = datauy_cpd_create_juego_realizado($form_state,$game_result);
+          $form_state['multistep_values'][$form_state['stage']] = $form_state['values'];
+        }
+      }
+    }else{
+      $form_state['eje_tematico'] = $form_state['values']['form_eje_tematico'];
+      $form_state['trivia'] = datauy_cpd_random_trivia4center($form_state['center'],$form_state['eje_tematico']);
+      if(!isset($form_state['trivia_contestada'])){
+        $form_state['trivia_contestada'] = datauy_cpd_create_trivia_contestada($form_state,$form_state['user_name'],$form_state['center'],$form_state['specify_center'],$form_state['eje_tematico']);
+        if(!isset($form_state['game_results_array'])){
+          $form_state['game_results_array'] = array();
+        }
+      }
+    }
+  }
+  else {
+    //Es la primer formulario donde ponen el nombre o anónimo
+    $anonymus = datauy_cpd_is_anonymus($form_state);
+    $_SESSION['datauy_cpd'] = array();
+    if($anonymus==0){
+      $_SESSION['datauy_cpd']['#user_name'] = $form_state['values']['name'];
+      $form_state['user_name'] = $form_state['values']['name'];
+    }else{
+      $_SESSION['datauy_cpd']['#user_name'] = "usuario anónimo";
+      $form_state['user_name'] = "usuario anónimo";
+    }
+    $form_state['center'] = $form_state['values']['center'];
+    $_SESSION['datauy_cpd']['#center'] = $form_state['values']['center'];
+    if(isset($form_state['values']['specify_center'])){
+      $_SESSION['datauy_cpd']['#specify_center'] = $form_state['values']['specify_center'];
+      $form_state['specify_center'] = $form_state['values']['specify_center'];
+    }else{
+      $_SESSION['datauy_cpd']['#specify_center'] = null;
+      $form_state['specify_center'] = null;
+    }
+  }
+
+  if (isset($form_state['multistep_values']['form_build_id'])) {
+    $form_state['values']['form_build_id'] = $form_state['multistep_values']['form_build_id'];
+  }
+  $form_state['multistep_values']['form_build_id'] = $form_state['values']['form_build_id'];
+  if(isset($form_state['just_played_game'])){
+    //No sumo stage porque es el mismo juego y falta mostrar el texto
+  }else{
+    $form_state['stage'] = $form_state['stage'] + 1;
+  }
+  $form_state['rebuild'] = TRUE;
+
+}
+
+function datauy_cpd_is_anonymus($form_state){
+  $anonymus = 0;
+  if($form_state['values']['op'] == t('No, gracias. Jugar ya')){
+    $anonymus = 1;
+  }
+  return $anonymus;
+}
+
+function datauy_cpd_create_trivia_contestada($form_state,$user_name,$center_id,$center_specify,$eje){
+  $node = new stdClass();
+  $node->field_eje_tematico['und']['0']['tid'] = $eje;
+  $node->field_nombre_de_la_persona['und']['0']['value'] = $user_name;
+  $node->field_resultado_trivia['und']['0']['value'] = "Sin terminar";
+  $node->title = $form_state['trivia']['title'] . " realizada por " . $user_name;
+  $node->type = "trivia_contestada";
+  node_object_prepare($node);
+  $node->status = 1; //(1 or 0): published or not
+  $node->field_trivia['und']['0']['target_id'] = $form_state['trivia']['id'];
+  if(isset($center_id)){
+    $node->field_centro_promotor_usuario['und']['0']['target_id'] = $center_id;
+  }
+  if(isset($center_specify)&&$center_specify!=null&&$center_specify!=""){
+    $node->field_especifica_centro_promotor['und']['0']['value'] = $center_specify;
+  }
+  node_save($node);
+  return $node;
+}
+
+function datauy_cpd_create_juego_realizado(&$form_state,$game_result){
+  $node = new stdClass();
+  $node->title = $form_state['game_node']->title . " jugado en " . $form_state['trivia_contestada']->title;
+  $node->type = "juego_contestado";
+  node_object_prepare($node);
+  $node->status = 1; //(1 or 0): published or not
+  $node->field_game_result['und']['0']['value'] = $game_result;
+  $node->field_trivia_contestada['und']['0']['target_id'] = $form_state['trivia_contestada']->nid;
+  $node->field_juego_contestado['und']['0']['target_id'] = $form_state['game_node']->nid;
+  $node = datauy_cpd_set_game_responses($node,$form_state);
+  node_save($node);
+  $form_state['game_results_array'][$node->nid] = $game_result;
+  $form_state['trivia_contestada'] = updateTriviaCountResponses($form_state,false);
+  return $node;
+}
+
+function updateTriviaCountResponses($form_state,$updateResult){
+  $ok = 0;
+  $bad = 0;
+  $unanswer = 0;
+  foreach ($form_state['game_results_array'] as $key => $result) {
+    if($result==1){
+      $ok = $ok + 1;
+    }else if($result==0){
+      $bad = $bad + 1;
+    }else if($result==-1){
+      $unanswer = $unanswer + 1;
+    }
+  }
+  $trivia_node = $form_state['trivia_contestada'];
+  if($updateResult==true){
+    $resultado = "";
+    if($ok>$bad & $ok>$unanswer){
+      $resultado = "Mayormente bien";
+    }
+    if($bad>$ok & $bad>$unanswer){
+      $resultado = "Mayormente mal";
+    }
+    if($unanswer>$ok & $unanswer>$bad){
+      $resultado = "Mayormente sin respoder";
+    }
+    if($result=="" && $ok==$bad){
+      $resultado = "Empate";
+    }
+    $trivia_node->field_resultado_trivia['und']['0']['value'] = $resultado;
+  }
+  $trivia_node->field_cantidad_respuestas_correc['und']['0']['value'] = $ok;
+  $trivia_node->field_cantidad_respuestas_incorr['und']['0']['value'] = $bad;
+  $trivia_node->field_cantidad_sin_responder['und']['0']['value'] = $unanswer;
+  node_save($trivia_node);
+  return $trivia_node;
+}
+
+function datauy_cpd_set_game_responses(&$node,$form_state){
+  $node->field_respuestas['und'] = array();
+  if($form_state['game_node']->type=="juego_ahorcado"){
+    $response = array();
+    //RESULTADO DEL AHORCADO CON INDEX 0 en respuestas
+    $response['value'] = $form_state['values']['form_resultado_ahorcado'];
+    $node->field_respuestas['und']['0'] = $response;
+    //Intentos restantes CON INDEX 1 en respuestas
+    $response['value'] = $form_state['values']['form_intentos_restantes_ahorcado'];
+    $node->field_respuestas['und']['1'] = $response;
+    //Intentos (letras y frases utilizadas) CON INDEX 2 en respuestas
+    $response['value'] = $form_state['values']['form_intentos'];
+    $node->field_respuestas['und']['2'] = $response;
+    //Frase final armada 3 en respuestas
+    $response['value'] = $form_state['values']['form_frase_armada'];
+    $node->field_respuestas['und']['3'] = $response;
+  }else if($form_state['game_node']->type=="juego_multipleopci_n"){
+    if(isset($form_state['values']['game'])){
+      if(is_array($form_state['values']['game'])){
+        //HAY MAS DE UNA RESPUESTA
+        foreach ($form_state['values']['game'] as $key => $respuesta) {
+          //print_r($respuesta);
+          //echo "<br/>";
+          if(strpos($respuesta, "selected-") !== false){
+            //La respuesta fue seleccionada
+            $response = array();
+            $response['value'] = str_replace("selected-","",$key);
+            array_push($node->field_respuestas['und'],$response);
+          }
+        }
+      }else{
+        //RESPUESTA UNICA
+        $response = array();
+        $response['value'] = $form_state['values']['game'];
+        $node->field_respuestas['und']['0'] = $response;
+      }
+    }else{
+      //NO RESPONDIO
+    }
+  }else if($form_state['game_node']->type=="juego_verdadero_falso"){
+    $response = array();
+    //RESULTADO DEL trueorfalse CON INDEX 0 en respuestas
+    $response['value'] = $form_state['values']['form_resultado_trueorfalse'];
+    $node->field_respuestas['und']['0'] = $response;
+  }
+  return $node;
+}
+
+function datauy_cpd_get_game_result($form_state){
+  if($form_state['game_node']->type=="juego_sopa_de_letras"){
+    $result = $form_state['values']['form_resultado_sopadeletras'];
+  }else if($form_state['game_node']->type=="juego_ahorcado"){
+    //RESULTADO DEL AHORCADO
+    $result = $form_state['values']['form_resultado_ahorcado'];
+  }else if($form_state['game_node']->type=="juego_multipleopci_n"){
+    $result = 1;
+    if(isset($form_state['values']['game'])){
+      $responsesArray = array();
+      if(is_array($form_state['values']['game'])){
+        //HAY MAS DE UNA RESPUESTA
+        foreach ($form_state['values']['game'] as $key => $respuesta) {
+          if(strpos($respuesta, "selected-") !== false){
+            array_push($responsesArray,str_replace("selected-","",$key));
+          }
+        }
+      }else{
+        //RESPUESTA UNICA
+        array_push($responsesArray,str_replace("selected-","",$form_state['values']['game']));
+      }
+      if ( isset($form_state['game_node']->field_respuestas_incorrectas['und']) ){
+        //Por ahora concatenamos los campos de consigna
+        foreach ($form_state['game_node']->field_respuestas_incorrectas['und'] as $wrong) {
+          $wrong_value = $wrong['value'];
+          if (in_array($wrong_value, $responsesArray)) {
+              //Respondió una opción de las que no se podían responder
+              return 0;
+          }
+        }
+      }
+    }else{
+      //NO RESPONDIO
+      $result=null;
+    }
+    //return 1;
+  }else if($form_state['game_node']->type=="juego_verdadero_falso"){
+    $result = $form_state['values']['form_resultado_trueorfalse'];
+  }
+  if($result==null||$result==""){
+    return -1;
+  }else{
+    return $result;
+  }
+}
+
+/**
+*   Query for trivia nodes
+*/
+function datauy_cpd_trivia_nodes($parameters){
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'bat_unit')
+      ->propertyCondition('status', 1)
+      ->addMetaData('account', user_load(1));
+  if ( isset($parameters['type_id']) )
+      $query->propertyCondition('type_id', $parameters['type_id']);
+  if ( isset($parameters['type']) )
+      $query->entityCondition('bundle', $parameters['type']);
+  if ( isset($parameters['is_bookable']) )
+      $query->fieldCondition('field_is_bookable', 'value', 1);
+  /*if ( $unit_ids )
+      $query->fieldCondition('event_bat_unit_reference', 'target_id', $unit_ids, 'IN');*/
+  $result = $query->execute();
+  watchdog('datauy_cpd', 'GENERAL query:'.print_r($result, TRUE) , array() );
+  if ( isset($result['bat_unit']) ){
+      return $res_obj = array_keys($result['bat_unit']);
+  }
+  return 0;
+}
+
+/**
+*   Query for centros
+*/
+function datauy_cpd_centros_options(){
+  $options = array( 0 => 'Elige tu centro');
+
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+    ->propertyCondition('status', 1)
+    ->addMetaData('account', user_load(1))
+    ->entityCondition('bundle', 'centro_promotor');
+  $result = $query->execute();
+  // Evaluar si no conviene crear una vista cacheada
+  if ( isset($result['node']) ){
+    foreach ($result['node'] as $nid => $value) {
+      $centro = node_load($nid);
+      $options[$nid] = $centro->title;
+    }
+  }
+  return $options;
+}
+
+
+
+function datauy_cpd_random_trivia4center($center_id,$eje_tematico_id){
+  $nodeQuery = new EntityFieldQuery();
+  $entities = $nodeQuery->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'trivia')
+    ->propertyCondition('status', 1)
+    //->fieldCondition('field_centro_promotor', 'target_id', $center_id)
+    ->fieldCondition('field_eje_tematico', 'tid', $eje_tematico_id);
+  $result = $entities->execute();
+  if (!empty($result['node'])) {
+    $trivias_ids = array_keys($result['node']);
+    $random_id = $trivias_ids[array_rand($trivias_ids)];
+    $node = node_load($random_id);
+    $trivia = array();
+    $trivia['id'] = $node->nid;
+    $trivia['title'] = $node->title;
+    $trivia['field_eje_tematico'] = array();
+    $trivia['field_eje_tematico']['und'] = $node->field_eje_tematico['und'];
+    foreach ($node->field_juego['und'] as $juego) {
+      $trivia['juegos'][] = $juego['target_id'];
+    }
+    return $trivia;
+  }
+  return null;
+}
+
+function datauy_cpd_get_multimedia_from_eje_tematico($eje_tematico_id){
+  $nodeQuery = new EntityFieldQuery();
+  $entities = $nodeQuery->entityCondition('entity_type', 'node')
+    ->entityCondition('bundle', 'multimedia')
+    ->propertyCondition('status', 1)
+    ->fieldCondition('field_eje_tematico', 'tid', $eje_tematico_id);
+  $result = $entities->execute();
+  if (!empty($result['node'])) {
+    $multimedia_ids = array_keys($result['node']);
+    $multimedia_nodes = node_load_multiple($multimedia_ids);
+    return $multimedia_nodes;
+  }else{
+    return null;
+  }
+}
+
+function datauy_cpd_get_trivia_end_links($trivia){
+  $result = "";
+  foreach ($trivia['field_eje_tematico']['und'] as $key => $eje_id) {
+    $eje = taxonomy_term_load($eje_id['tid']);
+    $multimedia_nodes = datauy_cpd_get_multimedia_from_eje_tematico($eje_id['tid']);
+    if(isset($multimedia_nodes)){
+      foreach ($multimedia_nodes as $key => $multimedia_node) {
+        $result .= "<div class='multimedia_link'><a href='node/".$multimedia_node->nid."'>".$eje->name."</a></div>";
+      }
+    }
+  }
+  return $result;
+}
+
+function datauy_cpd_get_game_multiplechoice_form($game,$stage,$ejes){
+  $form_element = array();
+  drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/multiple_choice.js');
+  //Cargamos las consignas
+  $form_element['game']['#title'] = '';
+  if ( isset($game->field_consigna['und']) ){
+    //Por ahora concatenamos los campos de consigna
+    foreach ($game->field_consigna['und'] as $consigna) {
+      $form_element['game']['#title'] .= '<br>'.$consigna['safe_value'];
+    }
+  }
+  //Cargamos la img de pregunta
+  if ( isset($game->field_imagen['und']) ){
+    $form_element['game']["#has_img_question"] = true;
+    //Por ahora concatenamos los campos de consigna
+    foreach ($game->field_imagen['und'] as $key => $img_question) {
+      $img = theme_image_style(array(
+        'style_name' => 'image_question',
+        'path' => $img_question['uri'],
+      ));
+      $form_element['game_img_question']['#img'] = $img;
+    }
+  }else{
+    $form_element['game']["#has_img_question"] = false;
+  }
+
+  //CARGAMOS LOS EJES TEMATICOS ASOCIADOS AL juego
+  //$form_element['info']['#eje'] = "<div id='eje_tematico_juego'>".$ejes."</div>";
+  $form_element['info']['#eje'] = $ejes;
+
+  //Cargamos las opciones
+  if (isset($game->field_imagen_de_respuesta['und'])){
+    $form_element['game']["#has_img_answers"] = true;
+    //Cargamos las imágenes
+    foreach ($game->field_imagen_de_respuesta['und'] as $key => $respuesta) {
+      //print_r($respuesta);
+      $img = theme_image_style(array(
+        'style_name' => 'thumbnail',
+        'path' => $respuesta['uri'],
+      ));
+      $form_element['game_img']['#options_img']["selected-".$key] = $img;
+    }
+  }else{
+    $form_element['game']["#has_img_answers"] = false;
+  }
+  if ( isset($game->field_respuesta['und']) ){
+    $form_element['game']['#options'] = array();
+    foreach ($game->field_respuesta['und'] as $key => $respuesta) {
+      $form_element['game']['#options']["selected-".$key] = $respuesta['safe_value'];
+    }
+  }
+  //seteamos el tipo
+  if ( $game->field_max_responses['und']['0']['value'] == 1 ){
+    $form_element['game']['#type'] = 'radios';
+  }else{
+    $form_element['game']['#type'] = 'checkboxes';
+  }
+  return $form_element;
+}
+
+function datauy_cpd_get_game_trueorfalse_form($game,$stage,$ejes){
+  $form_element = array();
+  drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/trueorfalse.js');
+  $form_element['game']['#title'] = "";
+  if ( isset($game->field_consigna['und']) ){
+    //Por ahora concatenamos los campos de consigna
+    foreach ($game->field_consigna['und'] as $consigna) {
+      $form_element['game']['#title'] .= $consigna['safe_value'];
+    }
+  }
+
+  //Cargamos la img de pregunta
+  if ( isset($game->field_imagen['und']) ){
+    $form_element['game']["#has_img_question"] = true;
+    //Por ahora concatenamos los campos de consigna
+    foreach ($game->field_imagen['und'] as $key => $img_question) {
+      $img = theme_image_style(array(
+        'style_name' => 'image_question',
+        'path' => $img_question['uri'],
+      ));
+      $form_element['game_img_question']['#img'] = $img;
+    }
+  }else{
+    $form_element['game']["#has_img_question"] = false;
+  }
+
+  //Cargamos las opciones
+  $trueorfalse = "";
+  if ( isset($game->field_verdadero['und']) ){
+    $trueorfalse = $game->field_verdadero['und'][0]['value'];
+  }
+  $form_element['stage']= array(
+                    "#type" => "hidden",
+                    "#value" => $stage
+                  );
+  $form_element['game']['#type'] = 'item';
+  $form_element['info']['#eje'] = $ejes;
+
+  $form_element['form_value'] = array(
+                                "#type" => "hidden",
+                                "#value" => $trueorfalse
+                              );
+  $form_element['form_resultado_trueorfalse'] = array(
+                            "#type" => "hidden",
+                            //"#value" => ""
+                          );
+  return $form_element;
+}
+
+function datauy_cpd_get_game_wordfind_form($game,$stage,$ejes){
+  $form_element = array();
+  drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/wordfind.js');
+  drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/wordfindgame.js');
+  drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/wordfindcpd.js');
+  //drupal_add_css(drupal_get_path('module', 'datauy_cpd') . '/css/wordfind.css');
+  $form_element['game']['#title'] = "";
+  if ( isset($game->field_consigna['und']) ){
+    //Por ahora concatenamos los campos de consigna
+    foreach ($game->field_consigna['und'] as $consigna) {
+      $form_element['game']['#title'] .= $consigna['safe_value'];
+    }
+  }
+
+  //Cargamos la img de pregunta
+  if ( isset($game->field_imagen['und']) ){
+    $form_element['game']["#has_img_question"] = true;
+    //Por ahora concatenamos los campos de consigna
+    foreach ($game->field_imagen['und'] as $key => $img_question) {
+      $img = theme_image_style(array(
+        'style_name' => 'image_question',
+        'path' => $img_question['uri'],
+      ));
+      $form_element['game_img_question']['#img'] = $img;
+    }
+  }else{
+    $form_element['game']["#has_img_question"] = false;
+  }
+
+  $form_element['stage']= array(
+                    "#type" => "hidden",
+                    "#value" => $stage
+                  );
+  $form_element['game']['#type'] = 'item';
+  $form_element['info']['#eje'] = $ejes;
+  $wordlist="";
+  foreach ($game->field_palabras['und'] as $word) {
+    $wordlist = $wordlist . "-" . $word['value'];
+  }
+  $wordlist = trim($wordlist,"-");
+  $form_element['words']['#list'] = $wordlist;
+  $form_element['form_resultado_sopadeletras'] = array(
+                            "#type" => "hidden",
+                            //"#value" => ""
+                          );
+  return $form_element;
+}
+
+function datauy_cpd_get_game_guesstheword_form($game,$stage,$ejes){
+  $form_element = array();
+  drupal_add_js(drupal_get_path('module', 'datauy_cpd') . '/js/ahorcado.js');
+  $form_element['game']['#title'] = "";
+  if ( isset($game->field_consigna['und']) ){
+    //Por ahora concatenamos los campos de consigna
+    foreach ($game->field_consigna['und'] as $consigna) {
+      $form_element['game']['#title'] .= '<br>'.$consigna['safe_value'];
+    }
+  }
+  else{
+    //Cargamos las imágenes
+    foreach ($game->field_imagen['und'] as $consigna) {
+      $img = theme_image_style(array(
+        'style_name' => 'thumbnail',
+        'path' => $consigna['uri'],
+        'width' => NULL,
+        'height' => NULL,
+      ));
+      $form_element['game']['#title'] .= '<br>'.$img;
+    }
+  }
+  //Cargamos las opciones
+  if ( isset($game->field_frase_a_armar['und']) ){
+    $letras = "";
+    foreach ($game->field_letras_reveladas['und'] as $key => $letra) {
+      $letras .= $letra['value'] . "|";
+    }
+    if($letras!=""){
+      $letras = rtrim($letras, "|");
+    }
+    $intentos = 1;
+    if ( isset($game->field_intentos['und']) ){
+      $intentos = $game->field_intentos['und'][0]['value'];
+    }
+    $form_element['stage']= array(
+                      "#type" => "hidden",
+                      "#value" => $stage
+                    );
+    $form_element['game']['#type'] = 'item';
+    $form_element['intentos']['#count'] = $intentos;
+    $form_element['game']['#markup'] = "<div id='frase_ahorcado'><span id='frase_parseada'></span></div><script type='text/javascript'>mostrarAhorcado('".$game->field_frase_a_armar['und'][0]['value']."','".$letras."',".$intentos.");</script>";
+    $form_element['game']['#markup'] .= "<div id='intentar_letra'>
+                                  Intentar con la letra:
+                                  <input type='textfield' id='intentar_letra_input' />
+                                  <input type='button' id='intentar_letra_button' value='intentar' onclick='intentarLetraAhorcado();'/>
+                                </div>";
+    $form_element['game']['#markup'] .= "<div id='arriesgar_frase'>
+                              Arriesgar con una frase:
+                              <input type='textfield' id='arriesgar_frase_input' />
+                              <input type='button' id='arriesgar_frase_button' value='intentar' onclick='intentarFraseAhorcado();'/>
+                            </div>";
+    $form_element['game']['#markup'] .= "<div id='intentos_restantes'>
+                                  Intentos restantes:
+                                  <span id='intentos_restantes_value'>".$intentos."</span>
+                                </div>";
+    $form_element['game']['#markup'] .= "<div id='historial_intentos' style='display:none;'>
+                            Ha intentado con:
+                            <span id='historial_intentos_utilizados'></span>
+                          </div>";
+    $form_element['game']['#markup'] .= "<div id='resultado' style='display:none;'>
+                                </div>";
+    $form_element['info']['#eje'] = $ejes;
+
+    $form_element['form_resultado_ahorcado'] = array(
+                                  "#type" => "hidden",
+                                  //"#value" => ""
+                                );
+    $form_element['form_intentos_restantes_ahorcado'] = array(
+                            "#type" => "hidden",
+                            //"#value" => ""
+                          );
+    $form_element['form_intentos'] = array(
+                            "#type" => "hidden",
+                            //"#value" => ""
+                          );
+    $form_element['form_frase_armada'] = array(
+                      "#type" => "hidden",
+                      //"#value" => ""
+                    );
+  }
+  return $form_element;
+}
+
+/*
+*
+*/
+function datauy_cpd_get_game_form($game,$stage){
+  $form_element = array();
+  $ejes = "";
+  foreach ($game->field_eje_tematico['und'] as $key => $eje_id) {
+    $eje = taxonomy_term_load($eje_id['tid']);
+    $ejeCSS = str_replace(" ", "_", strtolower($eje->name));
+    $ejes .= "<span class='eje_tematico_nombre ".$ejeCSS."'>".$eje->name."</span>";
+  }
+  if ( $game->type == 'juego_multipleopci_n' ){
+    $form_element = datauy_cpd_get_game_multiplechoice_form($game,$stage,$ejes);
+  } else if ($game->type == 'juego_ahorcado'){
+    $form_element = datauy_cpd_get_game_guesstheword_form($game,$stage,$ejes);
+  } else if($game->type == 'juego_verdadero_falso'){
+    $form_element = datauy_cpd_get_game_trueorfalse_form($game,$stage,$ejes);
+  } else if($game->type == 'juego_sopa_de_letras'){
+    $form_element = datauy_cpd_get_game_wordfind_form($game,$stage,$ejes);
+  }
+  //print_r($form_element);
+  return $form_element;
+}
+
+/*
+* TEST FUNCTION
+*/
+function datauy_cpd_test(){
+  global $user;
+  global $language;
+  print 'VAVAVA<pre>';
+  print_r( theme('test', array('data2show' => 'SALALALALALAA')) );
+  print '</pre>';
+  exit();
+}
+
+?>
